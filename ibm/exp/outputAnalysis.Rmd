@@ -1,0 +1,681 @@
+# //////////////////////
+# Output analysis 
+# //////////////////////
+
+# This markdown file is used to create the visualisations and numeric outputs presented
+# in the main text, except results pertaining to the sensitivity analysis which
+# can be found in saDiseasePostProcess.Rmd and saInterventionPostProcess.Rmd
+
+# Setup
+```{r}
+library(tidyverse)
+# Set working director
+sep_setting <- function(df) {
+  df %>% 
+    mutate(sar = case_when(str_detect(setting, "hha_0.02094982") ~ 0.02,
+                           str_detect(setting, "hha_0.2") ~ 0.2,
+                           TRUE ~ 0.4),
+           acf = case_when(str_detect(setting, "_acf_10") ~ 10,
+                           str_detect(setting, "_acf_25") ~ 25,
+                           str_detect(setting, "_acf_50") ~ 50,
+                           str_detect(setting, "_acf_5") ~ 5,
+                           TRUE ~ 0)
+    )
+}
+sim_day_to_year_month <- function(df) {
+  df <- df %>% 
+    mutate(date = sim_start_date+day,
+           year = substr(date, 1,4),
+           month = paste0(substr(date, 6,7),"-","01"),
+           year_month = as.Date(paste0(year, "-",month))) %>% 
+    select(-c(date, year, month)) 
+  return(df)
+}
+```
+
+
+#HHS
+## DATA: HHS only and baseline
+```{r}
+test_dir_outputs <- file.path("intervention_hhs")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]
+    csv_list[[j]] <- df
+    index <- index + 1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_hhs <- do.call(rbind, all_csv)
+```
+
+## CALC: get annual inc and 10y cum inc
+```{r}
+baseline_annual_inc_2015 <- data_hhs %>%
+  select(day, inc, index, setting) %>% 
+  filter(str_detect(setting, "_hhs_0")) %>% 
+  sim_day_to_year_month() %>% 
+  filter(year_month >= "2015-01-01" & year_month < "2016-01-01") %>% 
+  reframe(inc = sum(inc), .by = index)
+
+hhs_annual_inc_2030 <- data_hhs %>%
+  select(day, inc, index, setting) %>% 
+  filter(str_detect(setting, "_hhs_1")) %>% 
+  sim_day_to_year_month() %>% 
+  filter(year_month >= "2030-01-01" & year_month < "2031-01-01") %>% 
+  reframe(inc = sum(inc), .by = c(index, setting))
+
+# For figure "intervention impact"
+baseline_cum_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_0")) %>% 
+  filter(day>9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index)) %>% 
+  sep_setting()
+
+hhs_cum_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_1")) %>% 
+  filter(day>9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index)) %>% 
+  sep_setting()
+
+# For figure "Simulated outputs"
+baseline_annual_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_0")) %>%
+  select(day, inc, setting, index) %>% 
+  filter(day >= 8634) %>% 
+  sim_day_to_year_month() %>% 
+  mutate(year = lubridate::year(year_month)) %>% 
+  reframe(inc = sum(inc), .by = c(index, year)) %>% 
+  reframe(mean = mean(inc),
+          lb = quantile(inc, 0.025),
+          ub = quantile(inc, 0.975),
+          .by = year)
+
+hhs_annual_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_1")) %>%
+  select(day, inc, setting, index) %>% 
+  filter(day >= 8634) %>% 
+  sim_day_to_year_month() %>% 
+  mutate(year = lubridate::year(year_month)) %>% 
+  reframe(inc = sum(inc), .by = c(setting, index, year)) %>% 
+  reframe(mean = mean(inc),
+          lb = quantile(inc, 0.025),
+          ub = quantile(inc, 0.975),
+          .by = c(setting, year)) %>% 
+  sep_setting()
+```
+
+## PLOT: Baseline fit vs observed data
+```{r}
+observed_inc <- read_csv("data/index_data.csv")
+observed_inc <- observed_inc %>% 
+  mutate(year_month = paste0(lubridate::year(date_of_diagnosis),"-",
+                             lubridate::month(date_of_diagnosis),"-01"),
+         year_month = as.Date(year_month)) %>% 
+  count(year_month)
+
+baseline_monthly_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_0")) %>% 
+  sim_day_to_year_month() %>% 
+  reframe(inc = sum(inc), .by = c(year_month, index, setting))
+
+baseline_monthly_inc %>% 
+  reframe(mean = mean(inc),
+          lb = quantile(inc, 0.025),
+          ub = quantile(inc, 0.975),
+          .by = c(year_month, setting)) %>%
+  sep_setting() %>% 
+  ggplot() +
+  geom_ribbon(aes(year_month, ymin = lb, ymax = ub, fill = as.factor(sar)), alpha = 0.2) +
+  geom_line(aes(year_month, mean, colour = as.factor(sar))) +
+  geom_point(data = observed_inc, aes(year_month, round(n*(1/0.9)),
+                                      color = "Observed incidence",
+                                      fill = "Observed incidence")) +
+  scale_color_manual(name = "SAR", values = c("#AD002AFF","#00468BFF","#42B540FF","black")) +
+  scale_fill_manual(name = "SAR", values = c("#AD002AFF","#00468BFF","#42B540FF", "black")) +
+  labs(x = "Date",
+       y = "Monthly incidence") +
+  theme_bw() +
+  theme(legend.position = "top")
+
+ggsave("fit.pdf", width = 8, height = 5)
+```
+
+
+## PLOT: HHS vs baseline percentage change in cumulative incidence
+```{r}
+baseline_setting <- unique(baseline_cum_inc$setting)
+intervention_setting <- unique(hhs_cum_inc$setting)
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- hhs_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+result %>% 
+  sep_setting() %>% 
+  ggplot() +
+  geom_col(aes(as.factor(sar), mean), fill = "grey60") +
+  geom_jitter(aes(as.factor(sar), mean)) +
+  geom_errorbar(aes(as.factor(sar), ymin = ci_lower, ymax = ci_upper), width = 0.5) +
+  labs(x = "SAR",
+       y = "% change") +
+  theme_bw()
+
+ggsave("hhs_impact.pdf", height = 5, width = 5)
+```
+# ACF
+## DATA: ACF
+```{r}
+test_dir_outputs <- file.path("intervention_acf")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]
+    csv_list[[j]] <- df
+    index <- index + 1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_acf <- do.call(rbind, all_csv)
+```
+
+## CALC: get annual inc and 10y cum inc
+```{r}
+acf_annual_inc_2030 <- data_acf %>%
+  select(day, inc, index, setting) %>% 
+  sim_day_to_year_month() %>% 
+  filter(year_month >= "2030-01-01" & year_month < "2031-01-01") %>% 
+  reframe(inc = sum(inc), .by = c(index, setting))
+
+acf_cum_inc <- data_acf %>% 
+  filter(str_detect(setting, "hhs_1")) %>% 
+  filter(day>9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index)) %>% 
+  sep_setting()
+
+# For figure "simulated outputs"
+acf_annual_inc <- data_acf %>% 
+  select(day, inc, setting, index) %>% 
+  filter(day >= 8634) %>% 
+  sim_day_to_year_month() %>% 
+  mutate(year = lubridate::year(year_month)) %>% 
+  reframe(inc = sum(inc), .by = c(setting, index, year)) %>% 
+  reframe(mean = mean(inc),
+          lb = quantile(inc, 0.025),
+          ub = quantile(inc, 0.975),
+          .by = c(setting, year)) %>% 
+  sep_setting() %>% 
+  filter(acf>5)
+```
+
+## PLOT: ACF vs HHS only percentage change in cumulative incidence
+```{r}
+baseline_setting <- rep(unique(hhs_cum_inc$setting), each = 4)
+intervention_setting <- unique(acf_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- hhs_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- acf_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+result %>% 
+  sep_setting() %>% 
+  filter(acf != 5) %>% 
+  ggplot() +
+  geom_col(aes(as.factor(acf), mean), fill = "grey60") +
+  geom_point(aes(as.factor(acf), mean)) +
+  geom_errorbar(aes(as.factor(acf), ymin = ci_lower, ymax = ci_upper), width = 0.5) +
+  facet_wrap(~sar) +
+  labs(x = "ACF",
+       y = "% change") +
+  theme_bw()
+
+ggsave("acf_impact.pdf", height = 5, width = 7)
+```
+
+## PLOT: Annual incidence
+```{r}
+acf_annual_inc %>% 
+  rbind(hhs_annual_inc) %>% 
+  ggplot() +
+  geom_ribbon(data = baseline_annual_inc ,aes(year, ymin = lb, ymax = ub, fill = "Baseline (no intervention)"),
+              alpha = 0.1) +
+  geom_line(data = baseline_annual_inc, aes(year, mean, color = "Baseline (no intervention)")) +
+  geom_ribbon(aes(year, ymin = lb, ymax = ub, fill = as.factor(acf)), alpha = 0.2) +
+  geom_line(aes(year, mean, color = as.factor(acf)), linewidth = 1) +
+  scale_fill_manual(values = c("#00468BFF","#AD002AFF","#42B540FF","#FDAF91FF","black"),
+                    name = "ACF") +
+  scale_color_manual(values = c("#00468BFF", "#AD002AFF","#42B540FF","#FDAF91FF","black"),
+                     name = "ACF") +
+  facet_wrap(~sar, nrow = 1) +
+  labs(x = "Year",
+       y = "Annual number of cases") +
+  scale_x_continuous(breaks = seq(2021, 2039, 4)) +
+  theme_bw() +
+  theme(legend.position = "top") 
+
+ggsave("comparison_annual_inc.pdf", width = 7, height = 5)
+```
+
+## Plot: Cases averted
+```{r}
+# HHS vs no intervention
+baseline_setting <- unique(baseline_cum_inc$setting)
+intervention_setting <- unique(hhs_cum_inc$setting)
+
+result_hhs <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- hhs_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result_hhs$setting[i] <- intervention_setting[i]
+  result_hhs$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])
+  result_hhs$ci_lower[i] <- test$conf.int[1]
+  result_hhs$ci_upper[i] <- test$conf.int[2]
+}
+
+result_hhs <- result_hhs %>% 
+   sep_setting() %>% 
+    mutate(across(mean:ci_upper, ~.x*-1)) 
+
+
+# ACF + HHS vs no intervention
+baseline_setting <- rep(unique(baseline_cum_inc$setting), each = 4)
+intervention_setting <- unique(acf_cum_inc$setting)
+result_acf <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- acf_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result_acf$setting[i] <- intervention_setting[i]
+  result_acf$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])
+  result_acf$ci_lower[i] <- test$conf.int[1]
+  result_acf$ci_upper[i] <- test$conf.int[2]
+}
+
+result_acf <- result_acf %>% 
+  sep_setting() %>% 
+  filter(acf>5)  %>% 
+  mutate(across(mean:ci_upper, ~.x*-1))
+
+result_acf %>% 
+  rbind(result_hhs) %>% 
+  rbind(
+    tibble(setting = rep(c("padding"),2), # add some padding for visualisation
+           mean = rep(NA,2),
+           ci_lower = rep(NA,2),
+           ci_upper = rep(NA,2),  
+           sar = c(0.02, 0.2),
+           acf = rep(52, 2))
+  ) %>% 
+  ggplot() +
+  geom_point(aes(interaction(as.factor(acf), as.factor(sar)),
+                 mean, color = as.factor(sar)),
+             size = 3) +
+  geom_errorbar(aes(interaction(as.factor(acf), as.factor(sar)),
+                    color = as.factor(sar),
+                    ymin = ci_lower, ymax = ci_upper),
+                linewidth = 1) +
+  scale_x_discrete(labels = rep(c(0,10,25,50,""),3)) +
+  scale_color_manual(values = c("#AD002AFF","#00468BFF","#42B540FF"), name = "SAR") +
+  labs(x = "ACF",
+       y = "Cases averted") +
+  theme_bw() +
+  theme(legend.position = "top")
+
+ggsave("comparison_cum_inc.pdf", width = 6, height = 5)
+```
+
+
+# /////////////////////////////////
+# Tabular output
+# /////////////////////////////////
+# 2030 annual incidence HHS
+```{r}
+baseline_setting <- rep(unique(baseline_annual_inc_2015$setting))
+intervention_setting <- unique(hhs_annual_inc_2030$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_annual_inc_2015 %>% 
+    pull(inc)
+  
+  intervention <- hhs_annual_inc_2030 %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+result %>% 
+  mutate(across(mean:ci_upper, ~round(.x,1)))
+```
+
+
+```{r}
+baseline_setting <- rep(unique(baseline_annual_inc_2015$setting))
+intervention_setting <- unique(acf_annual_inc_2030$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_annual_inc_2015 %>% 
+    pull(inc)
+  
+  intervention <- acf_annual_inc_2030 %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+result %>% 
+  mutate(across(mean:ci_upper, ~round(.x,1))) %>% 
+  filter(str_detect(setting, "acf_50"))
+```
+
+
+```{r}
+acf_annual_inc %>% 
+  rbind(hhs_annual_inc) %>% 
+  rbind(baseline_annual_inc %>% mutate(setting = "baseline", sar = -99, acf = 0)) %>% 
+  filter(year == 2030) %>% 
+  filter(acf %in% c(10, 0, 50)) %>% 
+  mutate(across(mean:ub, ~round(.x)))
+```
+
+## HHS impact
+### percentage change
+```{r}
+baseline_setting <- unique(baseline_cum_inc$setting)
+intervention_setting <- unique(hhs_cum_inc$setting)
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- hhs_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+result %>% 
+  mutate_if(is.numeric, round, 1)
+```
+
+### cases averted
+```{r}
+baseline_setting <- unique(baseline_cum_inc$setting)
+intervention_setting <- unique(hhs_cum_inc$setting)
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- hhs_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])
+  result$ci_lower[i] <- test$conf.int[1]
+  result$ci_upper[i] <- test$conf.int[2]
+}
+
+result %>% 
+  mutate_if(is.numeric, round)
+```
+
+## ACF impact
+### percentage change
+```{r}
+baseline_setting <- rep(unique(hhs_cum_inc$setting), each = 4)
+intervention_setting <- unique(acf_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- hhs_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- acf_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+result %>% 
+  sep_setting() %>% 
+  filter(acf != 5) %>% 
+  mutate_if(is.numeric, round, 1)
+```
+
+### cases averted
+```{r}
+baseline_setting <- rep(unique(hhs_cum_inc$setting), each = 4)
+intervention_setting <- unique(acf_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- hhs_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- acf_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])
+  result$ci_lower[i] <- test$conf.int[1]
+  result$ci_upper[i] <- test$conf.int[2]
+}
+
+result %>% 
+  sep_setting() %>% 
+  filter(acf != 5) %>% 
+  mutate_if(is.numeric, round)
+```
+
+## HHS + ACF
+### percentage change
+```{r}
+baseline_setting <- rep(unique(baseline_cum_inc$setting), each = 4)
+intervention_setting <- unique(acf_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- acf_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+
+
+result %>% 
+  mutate_if(is.numeric, round,1)
+```
+
+### percentage change
+```{r}
+baseline_setting <- rep(unique(baseline_cum_inc$setting), each = 4)
+intervention_setting <- unique(acf_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- acf_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention,control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])
+  result$ci_lower[i] <- test$conf.int[1]
+  result$ci_upper[i] <- test$conf.int[2]
+}
+
+result %>% 
+  mutate_if(is.numeric, round)
+```
+
+
+```{r}
+rm(data_acf, data_hhs, all_csv, csv_list)
+```

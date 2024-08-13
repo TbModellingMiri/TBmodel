@@ -1,0 +1,458 @@
+# /////////////////////////////////////////////////
+# Sensitivity analysis intervention,post process
+# /////////////////////////////////////////////////
+
+# This markdown file is used to create the visualisations and numeric analysis 
+# presented as part of the sensitivity analysis of the intervention
+
+# Setup
+```{r}
+library(tidyverse)
+library(patchwork)
+# Set working director
+sep_setting <- function(df) {
+  df %>% 
+    mutate(sar = case_when(str_detect(setting, "hha_0.02094982") ~ 0.02,
+                           str_detect(setting, "hha_0.2") ~ 0.2,
+                           TRUE ~ 0.4),
+           acf = case_when(str_detect(setting, "_acf_10") ~ 10,
+                           str_detect(setting, "_acf_25") ~ 25,
+                           str_detect(setting, "_acf_50") ~ 50,
+                           str_detect(setting, "_acf_5") ~ 5,
+                           TRUE ~ 0)
+    )
+}
+
+sim_day_to_year_month <- function(df) {
+  df <- df %>% 
+    mutate(date = sim_start_date+day,
+           year_month = as.Date(
+             paste0(lubridate::year(date),"-",
+                    lubridate::month(date),"-01"))
+           ) %>% 
+    select(-date) 
+  return(df)
+}
+```
+
+# Baseline data
+## HHS only
+```{r}
+test_dir_outputs <- file.path("intervention_hhs")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]
+    csv_list[[j]] <- df
+    index <- index + 1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_hhs <- do.call(rbind, all_csv)
+
+hhs_cum_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_1")) %>% 
+  filter(day>9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index)) %>% 
+  sep_setting()
+
+baseline_cum_inc <- data_hhs %>% 
+  filter(str_detect(setting, "hhs_0")) %>% 
+  filter(day>9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index)) %>% 
+  sep_setting()
+
+rm(data_hhs)
+```
+
+## ACF
+```{r}
+test_dir_outputs <- file.path("intervention_acf")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]
+    csv_list[[j]] <- df
+    index <- index + 1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_acf <- do.call(rbind, all_csv)
+
+acf_cum_inc <- data_acf %>% 
+  filter(str_detect(setting, "hhs_1")) %>% 
+  filter(day>9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index)) %>% 
+  sep_setting()
+
+rm(data_acf)
+```
+
+
+# Sensitivity
+## Get data
+```{r}
+test_dir_outputs <- file.path("SA_sensitivity")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]  
+
+    csv_list[[j]] <- df
+    index <- index +1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_sens <- do.call(rbind, all_csv)
+```
+
+## Calc inc
+```{r}
+sens_inc <- data_sens %>% 
+  select(day, inc, setting, index) %>% 
+  reframe(inc = mean(inc), .by = c(day, setting)) %>% 
+  sim_day_to_year_month() %>% 
+  reframe(inc = sum(inc), .by = c(year_month, setting))
+
+sens_cum_inc <- data_sens %>% 
+  select(day, inc, index, setting) %>% 
+  filter(day >= 9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index))
+
+sens_baseline_cum_inc <- hhs_cum_inc %>% 
+  filter(!str_detect(setting, "hha_0.2")) %>% 
+  rbind(
+    acf_cum_inc %>% 
+      filter(!str_detect(setting, "hha_0.2")) %>% 
+      filter(str_detect(setting, "acf_50"))
+  )
+```
+
+## Calc difference
+```{r}
+baseline_setting <- rep(unique(sens_baseline_cum_inc$setting), each = 7)
+baseline_setting <- baseline_setting[order(baseline_setting)]
+
+intervention_setting <- unique(sens_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- sens_baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- sens_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention, control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+```
+
+## Visualise difference
+```{r}
+p1 = result %>% 
+  mutate_if(is.numeric, round) %>% 
+  mutate(sens = as.numeric(str_sub(setting, -3,-1)),
+         acf = ifelse(str_detect(setting, "acf_50"), 50, 0),
+         sar = ifelse(str_detect(setting, "hha_0.4"), 0.4, 0.02)) %>% 
+  mutate(sens = ifelse(acf == 0, sens-0.01, sens+0.01)) %>%  # jitter
+  ggplot() +
+  geom_point(aes(sens, mean, colour = as.factor(acf))) +
+  geom_errorbar(aes(sens, ymin = ci_lower, ymax = ci_upper, color = as.factor(acf)), width = 0.02) +
+  facet_wrap(~sar, nrow = 2) +
+  scale_color_manual(values = c("#00468BFF", "#ED0000FF"), name = "ACF") +
+  scale_x_continuous(breaks = seq(0.3, 0.9, 0.1)) +
+  geom_hline(aes(yintercept = 0), lty = "dashed") +
+  labs(x = "Test sensitivity",
+       y = "% change") +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+## Tabular presentation
+### Absolute impact of sensitivity = 0.3
+```{r}
+intervention_setting <- unique(sens_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- baseline_cum_inc %>% 
+    pull(cum_inc)
+  
+  intervention <- sens_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention, control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])
+  result$ci_lower[i] <- test$conf.int[1]
+  result$ci_upper[i] <- test$conf.int[2]
+}
+
+result %>% 
+  mutate(hha = c(rep(0.02, 14), rep(0.4, 14)),
+         acf = rep(c(rep(0, 7), rep(50, 7)), 2),
+         sens = rep(seq(0.3, 0.9, 0.1), 4)
+         ) %>% 
+  filter(sens == 0.3) %>% 
+  mutate_if(is.numeric, round)
+```
+
+# Delta
+## Get data
+```{r}
+test_dir_outputs <- file.path("SA_delta")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]  
+
+    csv_list[[j]] <- df
+    index <- index +1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_delta <- do.call(rbind, all_csv)
+```
+
+
+## Calc inc
+```{r}
+delta_cum_inc <- data_delta %>% 
+  select(day, inc, index, setting) %>% 
+  filter(day >= 9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index))
+```
+
+
+## Calc difference
+```{r}
+baseline_setting <- rep(unique(sens_baseline_cum_inc$setting), each = 4)
+baseline_setting <- baseline_setting[order(baseline_setting)]
+
+intervention_setting <- unique(delta_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- sens_baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- delta_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention, control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+```
+
+## Visualise difference
+```{r}
+p2 = result %>% 
+  mutate_if(is.numeric, round) %>% 
+  sep_setting() %>% 
+  mutate(delta = rep(c(0.009, 0.0095, 0.0105,0.011),4)) %>% 
+  filter(delta != 0.1) %>% 
+  mutate(delta = ifelse(acf == 0, delta+0.00006, delta-0.00006)) %>% # jitter
+  ggplot() +
+  geom_point(aes(delta, mean, colour = as.factor(acf))) +
+  geom_errorbar(aes(delta, ymin = ci_lower, ymax = ci_upper, color = as.factor(acf)), width = 0.0001) +
+  facet_wrap(~sar,nrow=2) +
+  scale_color_manual(values = c("#00468BFF", "#ED0000FF"), name = "ACF") +
+  geom_hline(aes(yintercept = 0), lty = "dashed") +
+  labs(x = expression(paste(delta[2])),
+       y = "") +
+  theme_bw() +
+  theme(legend.position = "top")
+
+rm(data_delta)
+```
+
+
+## Taublar presentation
+### sensitivity delta
+```{r}
+result %>% 
+  mutate(hha = c(rep(0.02, 8), rep(0.4, 8)),
+         acf = rep(c(rep(0, 4), rep(50, 4)), 2),
+         delta = rep(c(0.009, 0.0095, 0.0105, 0.011), 4)
+         ) %>% 
+  mutate(across(mean:ci_upper, ~ round(.x,1))) %>% 
+  filter(delta == 0.009 | delta == 0.011) %>% 
+  arrange(desc(mean))
+```
+
+# Phase
+## Get data
+```{r}
+test_dir_outputs <- file.path("SA_phase")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+
+sim_start_date <- as.Date("2031-01-01")-12652
+
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+index <- 1
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j])
+    df[, setting := sub("^[^/]*/", "", all_configs_dirs[i])]
+    df[, index := index]  
+
+    csv_list[[j]] <- df
+    index <- index +1
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+data_phase <- do.call(rbind, all_csv)
+```
+
+
+## Calc inc
+```{r}
+phase_cum_inc <- data_phase %>% 
+  select(day, inc, index, setting) %>% 
+  filter(day >= 9000) %>% 
+  reframe(cum_inc = sum(inc), .by = c(setting, index))
+```
+
+
+## Calc difference
+```{r}
+baseline_setting <- rep(unique(sens_baseline_cum_inc$setting), each = 5)
+baseline_setting <- baseline_setting[order(baseline_setting)]
+
+intervention_setting <- unique(phase_cum_inc$setting)
+
+result <- tibble(setting = seq_along(intervention_setting),
+                 mean = c(1),
+                 ci_lower = c(1),
+                 ci_upper = c(1))
+
+for(i in seq_along(intervention_setting)) {
+  control <- sens_baseline_cum_inc %>% 
+    filter(setting == baseline_setting[i]) %>% 
+    pull(cum_inc)
+  
+  intervention <- phase_cum_inc %>% 
+    filter(setting == intervention_setting[i]) %>% 
+    pull(cum_inc)
+  
+  test <- t.test(intervention, control)
+  
+  result$setting[i] <- intervention_setting[i]
+  result$mean[i] <- as.numeric(test$estimate[1]-test$estimate[2])/test$estimate[2]*100
+  result$ci_lower[i] <- test$conf.int[1]/test$estimate[2]*100
+  result$ci_upper[i] <- test$conf.int[2]/test$estimate[2]*100
+}
+```
+
+## Visualise difference
+```{r}
+p3 = result %>% 
+  mutate_if(is.numeric, round) %>% 
+  sep_setting() %>% 
+  mutate(phase = rep(c(1080, 360, 540,720, 900),4)) %>% 
+  mutate(phase = ifelse(acf == 0, phase-15, phase+15)) %>% # jitter
+  ggplot() +
+  geom_point(aes(phase, mean, colour = as.factor(acf))) +
+  geom_errorbar(aes(phase, ymin = ci_lower, ymax = ci_upper, color = as.factor(acf)), width = 30) +
+  facet_wrap(~sar, nrow = 2) +
+  scale_color_manual(values = c("#00468BFF", "#ED0000FF"), name = "ACF") +
+  geom_hline(aes(yintercept = 0), lty = "dashed") +
+  labs(x = "Intervention phase-in",
+       y = "") +
+  theme_bw() +
+  theme(legend.position = "none") 
+
+rm(data_phase)
+```
+
+# Save plot
+```{r}
+p1 | p2 | p3
+
+ggsave("sa_intervention.pdf", height = 5, width = 8)
+```
+
+```{r}
+rm(all_csv)
+```

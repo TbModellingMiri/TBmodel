@@ -1,0 +1,85 @@
+{
+    "simulation": {
+        "length_days": 9000,
+        "year_start": 2000,
+        "month_start": 1,
+        "day_start": 1
+    },
+    "initial_condition": {
+        "exposed": {
+            "size": 0
+        },
+        "infectious": {
+            "size": 1500
+        },
+        "latent": {
+            "size": 0
+        },
+        "treated": {
+            "size": 0
+        },
+        "recovered": {
+            "size": 0
+        },
+        "region": {
+            "region": 0
+        }
+    },
+    "parameters": {
+        "beta": 0.1525,
+        "gamma": 0.00273224,
+        "hh_attack_rate": 0.02094982,
+        "alpha": 0.00006191781,
+        "phi": 0.05,
+        "delta1": 0.00025,
+        "delta2": 0.01,
+        "tau_I_mu": 573.05,
+        "tau_I_sd": 40,
+        "tau_I_min": 50,
+        "omega": 180,
+        "eta": 0.000005479452055,
+        "nu": 0.21,
+        "mu": 0.001065753
+    },
+    "intervention": {
+        "intervention_start": 99999,
+        "intervention_stop": 99999,
+        "intervention_phase" : 2000.0,
+        "delta1_intervention": 0.00025,
+        "delta2_intervention": 0.01,
+        "acf_screened": 0,
+        "HHS": 1,
+        "sensitivity" : 1
+    },
+    "data": {
+        "path": "data",
+        "region": {
+            "no_of_regions": 1,
+            "file": "regions_data.csv"
+        },
+        "age_dist": {
+            "file": "age_dist.csv"
+        },
+        "household_dist": {
+            "file": "household.csv"
+        }
+    },
+    "mobility": {
+        "mobility_model": 1,
+        "type_1": {
+            "prob_travel_times_per_year": 1,
+            "days_away_mean": 14.0,
+            "days_away_sd": 2.0
+        },
+        "season": {
+            "prob_travel_times_per_year": 1,
+            "days_away_mean": 9.0,
+            "days_away_sd": 2.0,
+            "holiday_start_year": 2023,
+            "holiday_start_month": 12,
+            "holiday_start_day": 1,
+            "length": 31,
+            "recurrent": -1
+        }
+    }
+}

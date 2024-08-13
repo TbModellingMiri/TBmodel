@@ -1,0 +1,93 @@
+# ///////////////////////
+# Fit post process
+# ///////////////////////
+
+# This markdown file is used to create the analysis of the model fitting.
+# This file also creates the visualisations of the model fit for the supplement
+# files.
+
+```{r}
+library(tidyverse)
+library(data.table)
+```
+
+```{r}
+observed_inc <- read_csv("data/index_data.csv")
+observed_inc <- observed_inc %>% 
+  mutate(year_month = paste0(lubridate::year(date_of_diagnosis),"-",
+                             lubridate::month(date_of_diagnosis),"-01"),
+         year_month = as.Date(year_month)) %>% 
+  count(year_month)
+```
+
+```{r}
+test_dir_outputs <- file.path("fit")
+all_configs_dirs <- list.dirs(test_dir_outputs, recursive = FALSE)
+```
+
+```{r}
+pattern_name <- "_sim_table.csv"
+all_csv <- list()
+
+for (i in seq_along(all_configs_dirs)) {
+  csv_list <- list()
+  csv_files <- list.files(path = file.path(all_configs_dirs[i], "outputs"),
+                          pattern = pattern_name, full.names = TRUE)
+  for (j in seq_along(csv_files)) {
+    df <- data.table::fread(csv_files[j], select = c(1, 9))
+    df[, index := sub("^[^/]*/", "", all_configs_dirs[i])]  
+    csv_list[[j]] <- df
+  }
+  all_csv[[i]] <- do.call(rbind, csv_list) 
+}
+
+
+data <- do.call(rbind, all_csv)
+
+data <- data %>%
+  select(day, inc, index) %>% 
+  group_by(day, index) %>% 
+  summarise_all(mean) %>% 
+  ungroup() %>% 
+  mutate(hha = case_when(str_detect(index, "hha_0.02094982") ~ 0.02,
+                         str_detect(index, "hha_0.2") ~ 0.2,
+                                    TRUE ~ 0.4),
+         beta = as.numeric(sub(".*beta_", "", index)))
+
+simulation_start <- as.Date("2021-01-01")-9000
+
+predicted_inc <- data %>% 
+  ungroup() %>% 
+  mutate(date = simulation_start + day) %>%
+  filter(date > "2015-01-01" &
+           date < "2021-01-01") %>% 
+  mutate(year = substr(date, 1,4),
+         month = paste0(substr(date, 6,7),"-","01"),
+         year_month = as.Date(paste0(year, "-",month))) %>% 
+  reframe(inc = sum(inc), .by = c(hha, beta, year_month))
+
+
+NLL <- predicted_inc %>% 
+  left_join(observed_inc) %>% 
+  mutate(nll = -dpois(round(n*(1/0.9)),inc)) %>% 
+  reframe(beta = mean(beta),
+          nll = sum(nll),
+          .by = c(beta,hha)) 
+
+min_nll <- NLL %>% 
+  group_by(hha) %>%
+  filter(nll == min(nll))
+
+NLL %>% 
+  ggplot() +
+  geom_line(aes(beta, nll)) +
+  geom_vline(data = min_nll, aes(xintercept = beta), linetype = "dashed") +
+  geom_label(data = min_nll, aes(label = paste0("min: ", format(round(beta, 4), nsmall = 4)),
+                                 x = beta + 0.004, y = -1.85)) +
+  facet_wrap(~hha, nrow = 1, scales = "free_x") +
+  labs(x = expression(paste(beta)),
+       y = "Negative log-likelihood") +
+  theme_bw()
+
+ggsave("nll.pdf", height = 4, width = 6)
+```
