@@ -13,8 +13,6 @@ class HumanManager {
     const double kSensitivity;
     std::vector<int> phi_destination;
     std::vector<int> tau_I;
-    //std::vector<int> tau_L;
-    //std::vector<int> eta;
     std::vector<int> omega_vec;
     int sampled_hh = 0;
 
@@ -33,21 +31,11 @@ class HumanManager {
     const double kTau_I_sd;
     const int kTau_I_min;
 
-    /*
-    const double kTau_L_mu;
-    const double kTau_L_sd;
-    const int kTau_L_min;
-    */
    const double kOmega;
    const double kEta;
    const double kNu;
    const double kMu;
     
-    /*
-    const double kEta_mu;
-    const double kEta_sd;
-    const int kEta_min;
-    */
     // double lambda_t = 0.0;
     int s_t = 0;
     int e_t = 0;
@@ -59,9 +47,6 @@ class HumanManager {
     int inc_t = 0;
     int hh_inc_t = 0;
 
-    //std::vector<bool> sex;
-    //std::vector<int> age_group;
-    //std::vector<double> kAge_weights;
     std::vector<int> household;
     std::vector<int> was_latent_status;
     std::vector<int> time_to_hh_attack;
@@ -86,20 +71,11 @@ public:
         double tau_I_mu,
         double tau_I_sd,
         int tau_I_min,
-        /*
-        double tau_L_mu,
-        double tau_L_sd,
-        int tau_L_min,
-        */
+        
         double omega,
         double eta,
         double nu,
         double mu,
-        /*
-        double eta_mu,
-        double eta_sd,
-        int eta_min,
-        */
         
         int init_e,
         int init_i,
@@ -108,7 +84,6 @@ public:
         int init_r,
 
         int no_of_households,
-        //const std::vector<double>& age_weights,
         std::vector<int> input_household,
         int intervention_start,
         int intervention_stop,

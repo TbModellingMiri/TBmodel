@@ -35,7 +35,6 @@ my_configs/
 .Rhistory
 .RData
 .Ruserdata
-data/
 ignore/
 *.DS_Store
 .DS_Store

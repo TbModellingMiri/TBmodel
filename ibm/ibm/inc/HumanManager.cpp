@@ -29,11 +29,7 @@ HumanManager::HumanManager(
     double eta,
     double nu,
     double mu,
-    /*
-    double eta_mu,
-    double eta_sd,
-    int eta_min,
-    */
+  
     int init_e,
     int init_i,
     int init_l,
@@ -41,7 +37,7 @@ HumanManager::HumanManager(
     int init_r,
 
     int no_of_households,
-    // const std::vector<double>& age_weights,
+
     std::vector<int> input_household,
     int intervention_start,
     int intervention_stop,
@@ -57,7 +53,7 @@ HumanManager::HumanManager(
 
         phi_destination(kNo_of_humans),
         tau_I(kNo_of_humans),
-        // tau_L(kNo_of_humans),
+
         omega_vec(kNo_of_humans, kOmega),
         kBeta(beta),
         kGamma(gamma),
@@ -69,21 +65,12 @@ HumanManager::HumanManager(
         kTau_I_mu(tau_I_mu),
         kTau_I_sd(tau_I_sd),
         kTau_I_min(tau_I_min),
-        /*
-        kTau_L_mu(tau_L_mu),
-        kTau_L_sd(tau_L_sd),
-        kTau_L_min(tau_L_min),
-        */
-
+       
         kOmega(omega),
         kEta(eta),
         kNu(nu),
         kMu(mu),
-        // sex(kNo_of_humans),
-        // age_group(kNo_of_humans),
-        // household(kNo_of_humans), // probably defined incorrectly // try comment out
-
-        // kAge_weights(age_weights),
+        
         infectious_households(kNo_of_households, 0), // and ensure size > kHuman number or greater than csv
         was_latent_status(kNo_of_humans, 1),
         time_to_hh_attack(kNo_of_humans, -1),
@@ -137,26 +124,14 @@ HumanManager::HumanManager(
     assert(a_t == init_a);
     assert(r_t == init_r);
     assert(s_t + e_t + i_t + l_t + a_t + r_t == kNo_of_humans);
-    /*
-    int n = kNo_of_humans;
-    int m = kNo_of_households / 5;
-    std::vector<int> household_sizes = get_hh_sizes(m, std::log(5), std::log(2.1));
-    std::vector<int> household = sample_households(n, m, household_sizes);
-
-    */
+  
 
     // assign attributes
     for (int hh = 0; hh < kNo_of_humans; hh++)
     {
         phi_destination[hh] = get_rand_uniform() > kPhi ? 1 : 0;
         tau_I[hh] = std::max(kTau_I_min, static_cast<int>(std::round(get_rand_normal(kTau_I_mu, kTau_I_sd))));
-        // tau_L[hh] = std::max(kTau_L_min, static_cast<int>(std::round(get_rand_normal(kTau_L_mu,kTau_L_sd))));
-        // eta[hh] = std::max(kEta_min, static_cast<int>(std::round(get_rand_normal(kEta_mu,kEta_sd))));
-        // omega[hh] = std::max(kOmega_min, static_cast<int>(std::round(get_rand_normal(kOmega_mu,kOmega_sd))));
-        // sex[hh] = get_rand_uniform() < 0.5 ? true : false;
-        // age_group[hh] = get_rand_discrete(kAge_weights);
-        // household[hh] = sample_integer(kNo_of_households-1);
-
+       
         // add infections to households
         if (human_seir_status[hh] == HumanSeirStatus::INFT)
         {

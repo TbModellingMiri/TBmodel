@@ -36,15 +36,19 @@
         "tau_I_mu": 573.05,
         "tau_I_sd": 40,
         "tau_I_min": 50,
+        "tau_L_mu": 600,
+        "tau_L_sd": 100,
+        "tau_L_min": 50,
         "omega": 180,
         "eta": 0.000005479452055,
         "nu": 0.21,
-        "mu": 0.001065753
+        "mu": 0.001065753,
+        "no_of_households": 27000
     },
     "intervention": {
-        "intervention_start": 99999,
+        "intervention_start": 9000,
         "intervention_stop": 99999,
-        "intervention_phase" : 2000.0,
+        "intervention_phase" : 180.0,
         "delta1_intervention": 0.00025,
         "delta2_intervention": 0.01,
         "acf_screened": 0,

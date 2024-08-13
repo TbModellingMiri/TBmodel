@@ -89,13 +89,6 @@ int main(int argc, char** argv) {
     std::vector<double> region_lon_col = region_csv_doc.GetColumn<double>("lon");
     std::vector<double> region_lat_col = region_csv_doc.GetColumn<double>("lat");
 
-    const std::filesystem::path age_dist_file = std::filesystem::path(".")
-        / std::filesystem::path(config["data"]["path"].GetString())
-        / std::filesystem::path(config["data"]["age_dist"]["file"].GetString());
-
-    rapidcsv::Document age_dist_csv_doc(age_dist_file.string());
-    std::vector<double> age_weights = age_dist_csv_doc.GetColumn<double>("population");
-
     const std::filesystem::path household_file = std::filesystem::path(".")
         / std::filesystem::path(config["data"]["path"].GetString())
         / std::filesystem::path(config["data"]["household_dist"]["file"].GetString());
@@ -123,16 +116,6 @@ int main(int argc, char** argv) {
     );
     const int kTotal_population = rgn_mgr->get_total_population();
     const int kNo_of_regions = config["data"]["region"]["no_of_regions"].GetInt();
-    
-    /*
-    AttributeManager* atr_mgr(
-        new AttributeManager(
-            kTotal_population,
-            avg_household_size,
-            age_weights
-        )
-    );
-    */
 
     HumanManager* hmn_mgr (
         new HumanManager(
@@ -173,7 +156,7 @@ int main(int argc, char** argv) {
             config["initial_condition"]["recovered"]["size"].GetInt(),
 
             config["parameters"]["no_of_households"].GetInt(),
-            //age_weights,
+
             household,
             config["intervention"]["intervention_start"].GetInt(),
             config["intervention"]["intervention_stop"].GetInt(),
@@ -333,26 +316,13 @@ int main(int argc, char** argv) {
     std::vector<std::string> sim_table_headers {
         "day", "susceptible", "exposed", "infected", "latent", "treated", "recovered", "diseased", "inc", "hh_inc"
     };
-    // print_vov(sim_table, sim_table_headers);
-    // print_vov(sim_table);
 
-    /*
-    std::vector<int> age_group = atr_mgr->get_age_group();
-    std::vector<int> households = atr_mgr->get_household();
-    std::vector<std::string> headers = {"age","household","prevalence"};
-
-    write_to_csv(kOut_path.string() + "_AGE_GROUPS.csv", age_group, headers[0]);
-    write_to_csv(kOut_path.string() + "_HOUSEHOLDS.csv", households, headers[1]);
-    
-    */
 
     write_to_csv(kOut_path.string() + "_sim_table.csv", sim_table, sim_table_headers);
     //write_to_csv(kOut_path.string() + "_prev.csv", rpt_prev, "prevalence");
     //write_to_csv(kOut_path.string() + "_prev_regions.csv", rpt_prev_regions);
     //write_to_csv(kOut_path.string() + "_human_mobility.csv", rpt_mobility);
     //write_to_csv(kOut_path.string() + "_infectious_households.csv", sim_table_infectious_households);
-
-    // print_v(rpt_mobility);
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
