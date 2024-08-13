@@ -1,8 +1,8 @@
 library(tidyverse)
 
-index_data <- tibble(id = 1:3000,
+index_data <- tibble(id = 1:2500,
        date_of_diagnosis = sample(seq(as.Date("2015-01-01"), as.Date("2020-12-31"), by = "day"),
-                                  size = 3000,
+                                  size = 2500,
                                   replace = TRUE)
        )
 

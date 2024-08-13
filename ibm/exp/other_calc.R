@@ -26,3 +26,5 @@ index_data %>%
   count(id) %>% 
   mutate(n = n+1) %>% 
   pull()
+
+

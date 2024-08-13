@@ -5,6 +5,9 @@
 # This markdown file is used to create the visualisations and numeric outputs presented
 # in the main text, except results pertaining to the sensitivity analysis which
 # can be found in saDiseasePostProcess.Rmd and saInterventionPostProcess.Rmd
+```{r}
+rm(list = ls())
+```
 
 # Setup
 ```{r}
@@ -186,7 +189,7 @@ result %>%
   sep_setting() %>% 
   ggplot() +
   geom_col(aes(as.factor(sar), mean), fill = "grey60") +
-  geom_jitter(aes(as.factor(sar), mean)) +
+  geom_point(aes(as.factor(sar), mean)) +
   geom_errorbar(aes(as.factor(sar), ymin = ci_lower, ymax = ci_upper), width = 0.5) +
   labs(x = "SAR",
        y = "% change") +
